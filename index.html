@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Magyar Névelő Ellenőrző</title>
+    <title>Magyar Névelő és Tartalom Ellenőrző</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -22,25 +22,28 @@
         .error-item {
             border-left: 4px solid #ef4444;
         }
+        .warning-item {
+            border-left: 4px solid #f59e0b;
+        }
     </style>
 </head>
 <body class="p-4 md:p-12">
     <div class="max-w-5xl mx-auto bg-white rounded-2xl container-shadow overflow-hidden">
         <!-- Header -->
         <div class="p-8 bg-indigo-800 text-white">
-            <h1 class="text-3xl font-bold">Magyar Névelő Ellenőrző</h1>
-            <p class="text-indigo-200 mt-2 text-lg">Ellenőrizd az "a" és "az" névelők helyes használatát a szövegben vagy HTML kódban.</p>
+            <h1 class="text-3xl font-bold">Magyar Névelő & Tartalom Ellenőrző</h1>
+            <p class="text-indigo-200 mt-2 text-lg">Névelőhelyesség, Alza linkek és Zarovka szűrés.</p>
         </div>
 
         <div class="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
             <!-- Bal oldal: Input -->
             <div class="lg:col-span-2 space-y-6">
                 <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">HTML vagy Sima Szöveg</label>
-                    <textarea id="textInput" class="w-full input-field border border-gray-300 rounded-xl p-4 code-area focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none" placeholder="Másold be a szöveget ide..."></textarea>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Forráskód vagy szöveg</label>
+                    <textarea id="textInput" class="w-full input-field border border-gray-300 rounded-xl p-4 code-area focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none" placeholder="Másold be a tartalmat ide..."></textarea>
                 </div>
                 
-                <button onclick="checkArticles()" class="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg flex items-center justify-center gap-2">
+                <button onclick="checkAll()" class="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
@@ -58,12 +61,16 @@
 
                 <div id="stats" class="hidden mt-6 pt-6 border-t border-slate-200">
                     <div class="flex justify-between items-center mb-2">
-                        <span class="text-sm text-gray-600">Összes névelő:</span>
+                        <span class="text-sm text-gray-600">Névelők száma:</span>
                         <span id="totalArticles" class="font-bold">0</span>
                     </div>
                     <div class="flex justify-between items-center text-red-600">
-                        <span class="text-sm">Hibás használat:</span>
+                        <span class="text-sm">Névelő hiba:</span>
                         <span id="errorCount" class="font-bold">0</span>
+                    </div>
+                    <div id="contentIssuesRow" class="flex justify-between items-center text-amber-600 hidden">
+                        <span class="text-sm">Tartalmi hiba:</span>
+                        <span id="contentErrorCount" class="font-bold">0</span>
                     </div>
                 </div>
 
@@ -76,30 +83,12 @@
 
     <script>
         const vowels = "aeiouáéíóöőúüűAEIOUÁÉÍÓÖŐÚÜŰ";
-        
-        // Számok ejtése szerinti kezdőbetű meghatározása
-        function getStartingCharForNumber(numStr) {
-            const n = numStr.replace(/\s/g, '');
-            // 5, 50, 500, 5000... (Öt)
-            if (n.startsWith('5')) return 'ö';
-            // 1, 10, 100, 1000... (Egy)
-            if (n.startsWith('1')) return 'e';
-            // 2, 3, 4, 6, 7, 8, 9... (Mássalhangzóval kezdődnek)
-            if (n.startsWith('2')) return 'k';
-            if (n.startsWith('3')) return 'h';
-            if (n.startsWith('4')) return 'n';
-            if (n.startsWith('6')) return 'h';
-            if (n.startsWith('7')) return 'h';
-            if (n.startsWith('8')) return 'n';
-            if (n.startsWith('9')) return 'k';
-            return 'x'; // Default
-        }
 
         function isVowel(char) {
-            return vowels.indexOf(char) !== -1;
+            return char ? vowels.indexOf(char) !== -1 : false;
         }
 
-        function checkArticles() {
+        function checkAll() {
             const input = document.getElementById('textInput').value;
             const resultContainer = document.getElementById('resultContainer');
             const stats = document.getElementById('stats');
@@ -110,76 +99,102 @@
                 return;
             }
 
-            // 1. HTML tisztítás
+            let resultsHTML = "";
+            let errorCount = 0;
+            let contentErrorCount = 0;
+
+            // --- 1. TARTALOM ELLENŐRZÉS ---
+            const contentIssues = [];
+            
+            // Alza.cz bárhol a kódban
+            if (input.includes("alza.cz")) {
+                contentIssues.push({ from: "alza.cz", to: "alza.hu" });
+            }
+            
+            // Zarovka keresés: csak ha NEM követi a 100-as szám
+            const zarovkaRegex = /zarovka(?!100)\b/gi;
+            if (zarovkaRegex.test(input)) {
+                contentIssues.push({ from: "zarovka", to: "zarovka100" });
+            }
+
+            if (contentIssues.length > 0) {
+                contentErrorCount = contentIssues.length;
+                resultsHTML += `<div class="mb-6 space-y-2">
+                    <p class="text-xs font-bold text-amber-600 uppercase">Tartalmi figyelmeztetések:</p>
+                    ${contentIssues.map(issue => `
+                        <div class="warning-item bg-amber-50 p-3 rounded shadow-sm">
+                            <div class="flex items-center gap-2">
+                                <span class="text-amber-700 font-mono text-sm">${issue.from}</span>
+                                <span class="text-gray-400">→</span>
+                                <span class="text-green-700 font-bold">${issue.to}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+            }
+
+            // --- 2. NÉVELŐ ELLENŐRZÉS (Alapértelmezett logika) ---
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = input;
-            const scripts = tempDiv.getElementsByTagName('script');
-            const styles = tempDiv.getElementsByTagName('style');
-            for (let i = scripts.length - 1; i >= 0; i--) scripts[i].remove();
-            for (let i = styles.length - 1; i >= 0; i--) styles[i].remove();
-            
+            const scripts = tempDiv.querySelectorAll('script, style');
+            scripts.forEach(s => s.remove());
             const cleanText = tempDiv.textContent || tempDiv.innerText || "";
 
-            // 2. Keresés (a/az + következő szó)
-            // Regex: \b(a|az)\s+([a-záéíóöőúüű0-9]+)
             const regex = /\b(a|az)\b\s+([a-záéíóöőúüű0-9]+)/gi;
             let match;
-            const errors = [];
-            let totalFound = 0;
+            let totalArticles = 0;
+            const articleErrors = [];
 
             while ((match = regex.exec(cleanText)) !== null) {
-                totalFound++;
+                totalArticles++;
                 const article = match[1].toLowerCase();
                 const nextWord = match[2];
-                const firstChar = nextWord.charAt(0);
+                const firstChar = nextWord[0];
                 
-                let startsWithVowel = false;
+                const startsWithVowel = isVowel(firstChar);
 
-                if (/[0-9]/.test(firstChar)) {
-                    // Ha szám, meg kell nézni a kiejtést
-                    const soundChar = getStartingCharForNumber(nextWord);
-                    startsWithVowel = isVowel(soundChar);
-                } else {
-                    // Ha betű
-                    startsWithVowel = isVowel(firstChar);
-                }
-
-                // Szabály: "az" + magánhangzó VAGY "a" + mássalhangzó
+                // Egyszerű szabály: az + magánhangzó, a + minden más
                 const isCorrect = (article === 'az' && startsWithVowel) || (article === 'a' && !startsWithVowel);
 
                 if (!isCorrect) {
-                    errors.push({
+                    errorCount++;
+                    articleErrors.push({
                         found: match[0],
-                        article: article,
-                        word: nextWord,
-                        index: match.index
+                        correct: (article === 'a' ? 'az' : 'a') + " " + nextWord
                     });
                 }
             }
 
-            // UI Frissítés
-            document.getElementById('totalArticles').textContent = totalFound;
-            document.getElementById('errorCount').textContent = errors.length;
-            stats.classList.remove('hidden');
-
-            if (errors.length === 0) {
-                resultContainer.innerHTML = `
-                    <div class="bg-green-50 p-6 rounded-lg text-center border border-green-100">
-                        <p class="text-green-600 font-bold">Minden helyes! ✅</p>
-                        <p class="text-green-500 text-xs mt-1">Nem találtam hibás névelőt.</p>
-                    </div>`;
-            } else {
-                resultContainer.innerHTML = errors.map(err => `
+            if (articleErrors.length > 0) {
+                resultsHTML += `<p class="text-xs font-bold text-red-600 uppercase mb-2">Névelő hibák:</p>` + 
+                articleErrors.map(err => `
                     <div class="error-item bg-white p-3 rounded shadow-sm">
-                        <div class="flex items-center gap-2">
-                            <span class="text-red-500 line-through font-bold">${err.found}</span>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-red-500 line-through">${err.found}</span>
                             <span class="text-gray-400">→</span>
-                            <span class="text-green-600 font-bold">${err.article === 'a' ? 'az' : 'a'} ${err.word}</span>
+                            <span class="text-green-600 font-bold">${err.correct}</span>
                         </div>
-                        <p class="text-[10px] text-gray-400 mt-1 uppercase tracking-tighter">Pozíció: ${err.index}. karakter</p>
                     </div>
                 `).join('');
             }
+
+            if (resultsHTML === "") {
+                resultsHTML = `
+                    <div class="bg-green-50 p-6 rounded-lg text-center border border-green-100">
+                        <p class="text-green-600 font-bold">Nincs hiba! ✅</p>
+                    </div>`;
+            }
+
+            resultContainer.innerHTML = resultsHTML;
+            document.getElementById('totalArticles').textContent = totalArticles;
+            document.getElementById('errorCount').textContent = errorCount;
+            document.getElementById('contentErrorCount').textContent = contentErrorCount;
+            
+            const contentRow = document.getElementById('contentIssuesRow');
+            if (contentErrorCount > 0) contentRow.classList.remove('hidden');
+            else contentRow.classList.add('hidden');
+            
+            stats.classList.remove('hidden');
         }
 
         function clearAll() {
