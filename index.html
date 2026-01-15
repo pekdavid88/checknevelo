@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magyar Névelő Ellenőrző</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+        }
+        .container-shadow {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        .code-area {
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 0.875rem;
+            resize: vertical;
+            min-height: 250px;
+        }
+        .error-item {
+            border-left: 4px solid #ef4444;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-12">
+    <div class="max-w-5xl mx-auto bg-white rounded-2xl container-shadow overflow-hidden">
+        <!-- Header -->
+        <div class="p-8 bg-indigo-800 text-white">
+            <h1 class="text-3xl font-bold">Magyar Névelő Ellenőrző</h1>
+            <p class="text-indigo-200 mt-2 text-lg">Ellenőrizd az "a" és "az" névelők helyes használatát a szövegben vagy HTML kódban.</p>
+        </div>
+
+        <div class="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Bal oldal: Input -->
+            <div class="lg:col-span-2 space-y-6">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">HTML vagy Sima Szöveg</label>
+                    <textarea id="textInput" class="w-full input-field border border-gray-300 rounded-xl p-4 code-area focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none" placeholder="Másold be a szöveget ide..."></textarea>
+                </div>
+                
+                <button onclick="checkArticles()" class="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Ellenőrzés indítása
+                </button>
+            </div>
+
+            <!-- Jobb oldal: Eredmények -->
+            <div class="bg-slate-50 rounded-xl p-6 border border-slate-200 h-fit">
+                <h2 class="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Eredmények</h2>
+                
+                <div id="resultContainer" class="space-y-4">
+                    <p class="text-gray-500 italic text-center py-8">Várakozás az elemzésre...</p>
+                </div>
+
+                <div id="stats" class="hidden mt-6 pt-6 border-t border-slate-200">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm text-gray-600">Összes névelő:</span>
+                        <span id="totalArticles" class="font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between items-center text-red-600">
+                        <span class="text-sm">Hibás használat:</span>
+                        <span id="errorCount" class="font-bold">0</span>
+                    </div>
+                </div>
+
+                <button onclick="clearAll()" class="w-full mt-8 py-2 px-4 text-slate-500 hover:text-slate-800 transition text-sm font-medium">
+                    Törlés
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const vowels = "aeiouáéíóöőúüűAEIOUÁÉÍÓÖŐÚÜŰ";
+        
+        // Számok ejtése szerinti kezdőbetű meghatározása
+        function getStartingCharForNumber(numStr) {
+            const n = numStr.replace(/\s/g, '');
+            // 5, 50, 500, 5000... (Öt)
+            if (n.startsWith('5')) return 'ö';
+            // 1, 10, 100, 1000... (Egy)
+            if (n.startsWith('1')) return 'e';
+            // 2, 3, 4, 6, 7, 8, 9... (Mássalhangzóval kezdődnek)
+            if (n.startsWith('2')) return 'k';
+            if (n.startsWith('3')) return 'h';
+            if (n.startsWith('4')) return 'n';
+            if (n.startsWith('6')) return 'h';
+            if (n.startsWith('7')) return 'h';
+            if (n.startsWith('8')) return 'n';
+            if (n.startsWith('9')) return 'k';
+            return 'x'; // Default
+        }
+
+        function isVowel(char) {
+            return vowels.indexOf(char) !== -1;
+        }
+
+        function checkArticles() {
+            const input = document.getElementById('textInput').value;
+            const resultContainer = document.getElementById('resultContainer');
+            const stats = document.getElementById('stats');
+            
+            if (!input.trim()) {
+                resultContainer.innerHTML = '<p class="text-gray-500 italic text-center py-8">Kérlek, írj be szöveget!</p>';
+                stats.classList.add('hidden');
+                return;
+            }
+
+            // 1. HTML tisztítás
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = input;
+            const scripts = tempDiv.getElementsByTagName('script');
+            const styles = tempDiv.getElementsByTagName('style');
+            for (let i = scripts.length - 1; i >= 0; i--) scripts[i].remove();
+            for (let i = styles.length - 1; i >= 0; i--) styles[i].remove();
+            
+            const cleanText = tempDiv.textContent || tempDiv.innerText || "";
+
+            // 2. Keresés (a/az + következő szó)
+            // Regex: \b(a|az)\s+([a-záéíóöőúüű0-9]+)
+            const regex = /\b(a|az)\b\s+([a-záéíóöőúüű0-9]+)/gi;
+            let match;
+            const errors = [];
+            let totalFound = 0;
+
+            while ((match = regex.exec(cleanText)) !== null) {
+                totalFound++;
+                const article = match[1].toLowerCase();
+                const nextWord = match[2];
+                const firstChar = nextWord.charAt(0);
+                
+                let startsWithVowel = false;
+
+                if (/[0-9]/.test(firstChar)) {
+                    // Ha szám, meg kell nézni a kiejtést
+                    const soundChar = getStartingCharForNumber(nextWord);
+                    startsWithVowel = isVowel(soundChar);
+                } else {
+                    // Ha betű
+                    startsWithVowel = isVowel(firstChar);
+                }
+
+                // Szabály: "az" + magánhangzó VAGY "a" + mássalhangzó
+                const isCorrect = (article === 'az' && startsWithVowel) || (article === 'a' && !startsWithVowel);
+
+                if (!isCorrect) {
+                    errors.push({
+                        found: match[0],
+                        article: article,
+                        word: nextWord,
+                        index: match.index
+                    });
+                }
+            }
+
+            // UI Frissítés
+            document.getElementById('totalArticles').textContent = totalFound;
+            document.getElementById('errorCount').textContent = errors.length;
+            stats.classList.remove('hidden');
+
+            if (errors.length === 0) {
+                resultContainer.innerHTML = `
+                    <div class="bg-green-50 p-6 rounded-lg text-center border border-green-100">
+                        <p class="text-green-600 font-bold">Minden helyes! ✅</p>
+                        <p class="text-green-500 text-xs mt-1">Nem találtam hibás névelőt.</p>
+                    </div>`;
+            } else {
+                resultContainer.innerHTML = errors.map(err => `
+                    <div class="error-item bg-white p-3 rounded shadow-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="text-red-500 line-through font-bold">${err.found}</span>
+                            <span class="text-gray-400">→</span>
+                            <span class="text-green-600 font-bold">${err.article === 'a' ? 'az' : 'a'} ${err.word}</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-1 uppercase tracking-tighter">Pozíció: ${err.index}. karakter</p>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function clearAll() {
+            document.getElementById('textInput').value = '';
+            document.getElementById('resultContainer').innerHTML = '<p class="text-gray-500 italic text-center py-8">Várakozás az elemzésre...</p>';
+            document.getElementById('stats').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
